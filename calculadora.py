@@ -1,7 +1,7 @@
 import math
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, DecimalException, InvalidOperation, ROUND_HALF_UP
 
-# Calculadora Financeira - Capitalização Simples e Composta
+# Calculadora Financeira - Juros, Amortização e VPL
 # Convenção adotada: 1 mês = 30 dias e 1 ano = 360 dias.
 
 DIAS_POR_UNIDADE = {
@@ -11,12 +11,12 @@ DIAS_POR_UNIDADE = {
 }
 
 
-def ler_numero(mensagem):
+def ler_numero(mensagem, conversor=float):
     """Lê um número aceitando vírgula ou ponto como separador decimal."""
     while True:
         try:
-            return float(input(mensagem).strip().replace(",", "."))
-        except ValueError:
+            return conversor(input(mensagem).strip().replace(",", "."))
+        except (ValueError, InvalidOperation):
             print("Valor inválido. Digite um número.")
 
 
@@ -176,20 +176,25 @@ DIAS_POR_UNIDADE_COMPOSTA = {
     "ano": 360,
 }
 
+DIAS_POR_UNIDADE_SAC = {
+    **DIAS_POR_UNIDADE_COMPOSTA,
+    "bimestre": 60,
+    "trimestre": 90,
+    "quadrimestre": 120,
+}
 
-def ler_unidade_composta(mensagem):
+
+def ler_unidade_composta(mensagem, unidades=DIAS_POR_UNIDADE_COMPOSTA):
     """Aceita períodos para taxas e tempos de capitalização composta."""
-    aliases = {
-        "dia": "dia", "dias": "dia",
-        "mes": "mes", "mês": "mes", "meses": "mes",
-        "semestre": "semestre", "semestres": "semestre",
-        "ano": "ano", "anos": "ano",
-    }
+    aliases = {unidade + "s": unidade for unidade in unidades if unidade != "mes"}
+    aliases.update({"mês": "mes", "meses": "mes"})
+    opcoes = "/".join(unidades)
     while True:
-        unidade = input(mensagem + " [dia/mes/semestre/ano]: ").strip().lower()
-        if unidade in aliases:
-            return aliases[unidade]
-        print("Unidade inválida. Use dia, mes, semestre ou ano.")
+        unidade = input(f"{mensagem} [{opcoes}]: ").strip().lower()
+        unidade = aliases.get(unidade, unidade)
+        if unidade in unidades:
+            return unidade
+        print(f"Unidade inválida. Use uma destas opções: {opcoes}.")
 
 
 def ler_inteiro_positivo(mensagem):
@@ -224,10 +229,15 @@ def converter_tempo_composto(n, origem, destino):
     return n * DIAS_POR_UNIDADE_COMPOSTA[origem] / DIAS_POR_UNIDADE_COMPOSTA[destino]
 
 
-def converter_taxa_composta(taxa_decimal, origem, destino):
+def converter_taxa_composta(taxa_decimal, origem, destino, dias=DIAS_POR_UNIDADE_COMPOSTA):
     """Taxas efetivas equivalentes: i_dest = (1+i_orig)^(dias_dest/dias_orig)-1."""
     validar_taxa_composta(taxa_decimal)
-    expoente = DIAS_POR_UNIDADE_COMPOSTA[destino] / DIAS_POR_UNIDADE_COMPOSTA[origem]
+    if isinstance(taxa_decimal, Decimal):
+        if origem == destino:
+            return taxa_decimal
+        expoente = Decimal(dias[destino]) / dias[origem]
+        return (1 + taxa_decimal) ** expoente - 1
+    expoente = dias[destino] / dias[origem]
     return math.expm1(expoente * math.log1p(taxa_decimal))
 
 
@@ -298,11 +308,15 @@ def proporcional_para_nominal(taxa_proporcional_decimal, k):
     return taxa_proporcional_decimal * k
 
 
+def arredondar_centavos(valor):
+    return valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def formatar_reais(valor):
-    """Arredonda centavos pelo critério financeiro (meio centavo para cima)."""
+    """Formata em reais, arredondando o meio centavo para cima."""
     if not math.isfinite(valor):
         raise ValueError("O resultado financeiro deve ser um número finito.")
-    arredondado = Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    arredondado = arredondar_centavos(Decimal(str(valor)))
     return f"{arredondado:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
 
 
@@ -598,12 +612,169 @@ def menu_simples():
             print(f"\nErro: {erro}")
 
 
+# ---------------------------------------------------------------------------
+# Terceira parte: amortização SAC e Valor Presente Líquido
+# ---------------------------------------------------------------------------
+
+def ler_decimal_finito(mensagem, minimo=None):
+    while True:
+        valor = ler_numero(mensagem, Decimal)
+        if not valor.is_finite():
+            print("O valor deve ser finito.")
+        elif minimo is not None and valor < minimo:
+            print(f"O valor deve ser maior ou igual a {minimo}.")
+        else:
+            return valor
+
+
+def calcular_sac(financiamento, taxa, prestacoes, carencia=0, modalidade="1"):
+    """Retorna a tabela SAC em reais, incluindo o saldo devedor após cada período."""
+    zero = Decimal("0.00")
+    saldo = arredondar_centavos(financiamento)
+    juros_da_carencia = zero
+    linhas = [(0, zero, zero, zero, saldo)]
+
+    for periodo in range(1, carencia + 1):
+        juros = arredondar_centavos(saldo * taxa)
+        if modalidade == "1":
+            linhas.append((periodo, zero, juros, juros, saldo))
+        else:
+            saldo += juros
+            juros_da_carencia += juros
+            linhas.append((periodo, zero, zero, zero, saldo))
+
+    if modalidade == "2":
+        saldo -= juros_da_carencia
+    base_amortizacao = saldo
+    amortizacao_acumulada = zero
+
+    for parcela in range(1, prestacoes + 1):
+        saldo_para_juros = saldo
+        juros_diferidos = zero
+        if parcela == 1 and modalidade == "2":
+            juros_diferidos = juros_da_carencia
+            saldo_para_juros += juros_diferidos
+        juros = arredondar_centavos(saldo_para_juros * taxa) + juros_diferidos
+
+        # Arredonda a amortização acumulada para fechar o saldo em centavos.
+        total_amortizado = arredondar_centavos(base_amortizacao * parcela / prestacoes)
+        amortizacao = total_amortizado - amortizacao_acumulada
+        amortizacao_acumulada = total_amortizado
+        saldo -= amortizacao
+        linhas.append((carencia + parcela, amortizacao, juros, amortizacao + juros, saldo))
+
+    juros_incorporados = juros_da_carencia if modalidade == "3" else zero
+    return linhas, juros_incorporados
+
+
+def mostrar_tabela_sac(linhas, juros_incorporados):
+    total_amortizacao = sum(linha[1] for linha in linhas)
+    total_juros = sum(linha[2] for linha in linhas)
+    print("\nValores em R$")
+    print(f"{'Período':>7} {'Amortização':>16} {'Juros pagos':>16} {'Prestação':>16} {'Saldo devedor':>16}")
+    print("-" * 75)
+    for periodo, amortizacao, juros, prestacao, saldo in linhas:
+        print(
+            f"{periodo:>7} {formatar_reais(amortizacao):>16} {formatar_reais(juros):>16}"
+            f" {formatar_reais(prestacao):>16} {formatar_reais(saldo):>16}"
+        )
+    print("-" * 75)
+    print(
+        f"{'Total':>7} {formatar_reais(total_amortizacao):>16} {formatar_reais(total_juros):>16}"
+        f" {formatar_reais(total_amortizacao + total_juros):>16}"
+    )
+    if juros_incorporados:
+        print(f"Juros da carência incluídos na amortização: R$ {formatar_reais(juros_incorporados)}")
+
+
+def executar_sac():
+    print("\n--- Sistema de Amortização Constante (SAC) ---")
+    financiamento = ler_decimal_finito("Valor financiado (VP): R$ ", Decimal("0.01"))
+    taxa = ler_decimal_finito("Taxa efetiva em %: ", 0) / 100
+    unidade_taxa = ler_unidade_composta("Unidade da taxa", DIAS_POR_UNIDADE_SAC)
+    unidade_prestacao = ler_unidade_composta("Frequência das prestações", DIAS_POR_UNIDADE_SAC)
+    taxa_por_periodo = converter_taxa_composta(
+        taxa, unidade_taxa, unidade_prestacao, DIAS_POR_UNIDADE_SAC
+    )
+    prestacoes = ler_inteiro_positivo("Número de prestações de amortização: ")
+
+    print("\n0 - Sem carência")
+    print("1 - Juros pagos durante a carência")
+    print("2 - Juros acumulados e pagos na primeira prestação")
+    print("3 - Juros incorporados ao saldo para amortização")
+    modalidade = input("Modalidade de carência: ").strip()
+    while modalidade not in ("0", "1", "2", "3"):
+        modalidade = input("Escolha 0, 1, 2 ou 3: ").strip()
+
+    carencia = 0
+    if modalidade != "0":
+        carencia = ler_inteiro_positivo("Períodos de carência na frequência das prestações: ")
+
+    print(f"\nTaxa efetiva por {unidade_prestacao}: {taxa_por_periodo * 100:.6f}%")
+    linhas, juros_incorporados = calcular_sac(
+        financiamento, taxa_por_periodo, prestacoes, carencia, modalidade
+    )
+    mostrar_tabela_sac(linhas, juros_incorporados)
+
+
+def calcular_vpl(investimento, taxa, fluxos, valor_residual=0, periodo_residual=0):
+    """Desconta cada fluxo e o valor residual ao período zero."""
+    fator = 1 + taxa
+    valor_presente = sum(fluxo / fator ** periodo for periodo, fluxo in enumerate(fluxos, 1))
+    return valor_presente + valor_residual / fator ** periodo_residual - investimento
+
+
+def executar_vpl():
+    print("\n--- Valor Presente Líquido (VPL) ---")
+    investimento = ler_decimal_finito("Investimento inicial no período 0: R$ ", 0)
+    taxa = ler_decimal_finito("Taxa de desconto em % por período: ") / 100
+    validar_taxa_composta(taxa)
+    periodos = ler_inteiro_positivo("Quantidade de períodos com fluxos de caixa: ")
+    print("Digite 0 para um período sem fluxo e use sinal negativo para saídas.")
+    fluxos = [
+        ler_decimal_finito(f"Fluxo de caixa no período {periodo}: R$ ")
+        for periodo in range(1, periodos + 1)
+    ]
+    residual = ler_decimal_finito("Valor residual (0 se não houver): R$ ")
+    periodo_residual = 0
+    if residual:
+        periodo_residual = ler_inteiro_positivo("Período do valor residual: ")
+    vpl = calcular_vpl(investimento, taxa, fluxos, residual, periodo_residual)
+    print(f"\nVPL = R$ {formatar_reais(vpl)}")
+
+
+def menu_amortizacao_vpl():
+    while True:
+        print("\n" + "=" * 58)
+        print(" AMORTIZAÇÃO E VPL - 3ª PARTE")
+        print("=" * 58)
+        print("1 - Sistema de Amortização Constante (SAC)")
+        print("2 - Valor Presente Líquido (VPL)")
+        print("0 - Voltar ao menu principal")
+        print("=" * 58)
+        opcao = input("Escolha uma opção: ").strip()
+        try:
+            if opcao == "1":
+                executar_sac()
+            elif opcao == "2":
+                executar_vpl()
+            elif opcao == "0":
+                return
+            else:
+                print("\nOpção inválida. Escolha 0, 1 ou 2.")
+        except ValueError as erro:
+            print(f"\nErro: {erro}")
+        except DecimalException:
+            print("\nErro: os valores excedem a precisão disponível para o cálculo.")
+
+
 def mostrar_menu_principal():
     print("\n" + "=" * 58)
     print(" CALCULADORA FINANCEIRA")
     print("=" * 58)
     print("1 - Juros Simples (1ª Parte)")
     print("2 - Juros Compostos (2ª Parte)")
+    print("3 - Amortização e VPL (3ª Parte)")
     print("0 - Sair da Calculadora")
     print("=" * 58)
 
@@ -618,11 +789,13 @@ def main():
             menu_simples()
         elif opcao == "2":
             menu_composto()
+        elif opcao == "3":
+            menu_amortizacao_vpl()
         elif opcao == "0":
             print("\nPrograma encerrado.")
             return
         else:
-            print("\nOpção inválida. Escolha 0, 1 ou 2.")
+            print("\nOpção inválida. Escolha 0, 1, 2 ou 3.")
 
 
 if __name__ == "__main__":

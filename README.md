@@ -1,4 +1,4 @@
-# Calculadora Financeira — Capitalização Simples e Composta
+# Calculadora Financeira — Juros, Amortização e VPL
 
 Projeto em **Python 3**, com menu interativo no terminal, desenvolvido para a disciplina de Matemática Financeira.
 
@@ -8,6 +8,7 @@ Projeto em **Python 3**, com menu interativo no terminal, desenvolvido para a di
 CALCULADORA FINANCEIRA
 1 - Juros Simples (1ª Parte)
 2 - Juros Compostos (2ª Parte)
+3 - Amortização e VPL (3ª Parte)
 0 - Sair da Calculadora
 ```
 
@@ -36,6 +37,22 @@ CALCULADORA FINANCEIRA
 8. Converter **taxas efetivas equivalentes** entre dia, mês, semestre e ano.
 
 Na Parte 2, ao fazer os cálculos de VP, VF, J, taxa e tempo, é possível informar a taxa e o tempo em períodos diferentes: a calculadora converte esses períodos automaticamente.
+
+### Menu 3 — Amortização e VPL (3ª Parte)
+
+1. **Sistema de Amortização Constante (SAC).** Informe o financiamento, a taxa efetiva, a frequência das prestações e o número de parcelas de amortização. A calculadora converte a taxa para a frequência das prestações e exibe amortização, juros pagos, prestação e saldo devedor após cada período, além dos totais.
+2. **Valor Presente Líquido (VPL).** Informe o investimento inicial como valor positivo, a taxa de desconto por período e os fluxos de caixa a partir do período 1. Use zero para períodos sem movimento e valores negativos para saídas. Se houver valor residual, informe o valor e seu período, que pode ser posterior ao último fluxo.
+
+No SAC, a amortização teórica é o saldo a amortizar dividido pelo número de prestações. Os juros incidem sobre o saldo anterior e a prestação soma juros e amortização. A tabela distribui as diferenças de arredondamento da amortização ao longo das parcelas para que o saldo final feche em zero.
+
+O número de prestações informado no SAC começa após a carência. Informe a duração da carência na mesma unidade das parcelas. As modalidades seguem os slides de Amortização:
+
+- **Sem carência.** A amortização começa no primeiro período.
+- **Juros pagos durante a carência.** Cada pagamento nessa etapa cobre os juros do período.
+- **Juros pagos na primeira prestação.** Os juros acumulam durante a carência e são quitados junto com os juros do período e a primeira amortização.
+- **Juros incorporados ao saldo.** O saldo atualizado ao fim da carência é dividido pelas parcelas de amortização.
+
+O VPL soma os fluxos descontados pela taxa informada e subtrai o investimento inicial. Se houver valor residual, ele também é descontado pelo seu próprio período.
 
 ## Fórmulas — capitalização composta
 
@@ -72,8 +89,8 @@ py calculadora.py
 
 Se o comando `py` não estiver disponível, tente `python calculadora.py` (com Python 3 instalado).
 
-4. No menu principal, escolha **1 — Juros Simples (1ª Parte)** ou **2 — Juros Compostos (2ª Parte)**.
-5. Dentro de cada modalidade, escolha uma das 8 operações. Use **0** no submenu para voltar ao menu principal, ou **0** no menu principal para sair.
+4. Escolha **1 — Juros Simples**, **2 — Juros Compostos** ou **3 — Amortização e VPL**.
+5. Selecione a operação no submenu. Use **0** para voltar ao menu principal ou sair da calculadora quando estiver no menu principal.
 
 ## Exemplo de teste
 
@@ -85,15 +102,10 @@ No menu principal, escolha `2` (juros compostos); no submenu, escolha `2` (monta
 
 O resultado esperado é **R$ 6.347,50**.
 
-## Testes automáticos
+## Exemplos da Parte 3
 
-Na pasta do projeto, execute (inclui a verificação das 16 operações pelo menu):
-
-```powershell
-py -m unittest -v test_calculadora.py
-```
-
-Os testes usam somente bibliotecas padrão do Python, sem instalação de pacotes adicionais.
+- **SAC.** No menu `3 > 1`, informe R$ 8.000,00 a 5% ao mês em 4 prestações mensais, sem carência. A primeira prestação é de **R$ 2.400,00**, a última é de **R$ 2.100,00** e o saldo final é zero.
+- **VPL.** No menu `3 > 2`, informe investimento de R$ 1.000,00, taxa de 10% por período, fluxos de R$ 500,00 e R$ 700,00 nos períodos 1 e 2, e residual de R$ 100,00 no período 3. O VPL é **R$ 108,19**.
 
 ## Tecnologias
 
